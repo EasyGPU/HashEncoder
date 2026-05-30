@@ -49,6 +49,7 @@ struct HashGridGPUState {
 	// Owned GPU buffers
 	std::unique_ptr<Buffer<float>> tableBuffer;
 	std::unique_ptr<Buffer<float>> tableGradBuffer;
+	std::unique_ptr<Buffer<float>> dummyPosGradBuffer;  // Stub when posGrad is not requested
 
 	// Uniforms (set before dispatch)
 	Uniform<int> uNumLevels;
@@ -512,6 +513,11 @@ void HashGridEncoding<Dim>::EncodeGPUBackward(const Buffer<float> &PositionBuffe
 
 	if (PositionGradBuffer) {
 		_gpu->posGradSlot.Attach(*PositionGradBuffer);
+	} else {
+		if (!_gpu->dummyPosGradBuffer) {
+			_gpu->dummyPosGradBuffer = std::make_unique<Buffer<float>>(1, BufferMode::ReadWrite);
+		}
+		_gpu->posGradSlot.Attach(*_gpu->dummyPosGradBuffer);
 	}
 
 	uint32_t groups = (static_cast<uint32_t>(Count) + 255) / 256;

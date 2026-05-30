@@ -22,12 +22,26 @@ This encoding is the foundational building block for neural radiance fields (NeR
 ## Building
 
 ```bash
-git clone --recursive https://github.com/your-org/HashEncoder.git
+git clone --recursive https://github.com/EasyGPU/HashEncoder.git
 cd HashEncoder
 mkdir build && cd build
 cmake .. -DHASHENCODER_BUILD_EXAMPLES=ON -DHASHENCODER_BUILD_TESTS=ON
 cmake --build .
 ```
+
+### Backend Selection
+
+EasyGPU supports both OpenGL and Vulkan backends. HashEncoder works with either:
+
+```bash
+# OpenGL (default)
+cmake -B build -S . -DEASYGPU_BACKEND=OpenGL
+
+# Vulkan (requires Vulkan SDK)
+cmake -B build_vk -S . -DEASYGPU_BACKEND=Vulkan
+```
+
+Both backends produce identical numerical results and pass the same test suite.
 
 CMake options:
 
@@ -36,7 +50,21 @@ CMake options:
 | `HASHENCODER_BUILD_EXAMPLES` | ON | Build example programs |
 | `HASHENCODER_BUILD_TESTS` | ON | Build test suite |
 
+### Multi-Library Coexistence
+
+If your project depends on multiple EasyGPU-based libraries (each with its own EasyGPU submodule), HashEncoder uses a CMake guard to avoid duplicate target errors:
+
+```cmake
+if(NOT TARGET EasyGPU)
+    add_subdirectory(EasyGPU)
+endif()
+```
+
+This means the first library to add EasyGPU wins — subsequent libraries reuse the same target. For this to work safely, ensure all libraries use compatible EasyGPU versions.
+
 ## Quick Start
+
+### Basic Encoding
 
 ```cpp
 #include <HashEncoder/HashEncoder.h>
@@ -63,6 +91,42 @@ encoder.EncodeCPU(positions.data(), features.data(), 1);
 GPU::Runtime::Buffer<float> posBuffer(positions, GPU::Runtime::BufferMode::Read);
 GPU::Runtime::Buffer<float> featBuffer(encoder.GetOutputDims());
 encoder.EncodeGPU(posBuffer, featBuffer, 1);
+```
+
+### End-to-End Training with NeuralHashGrid
+
+```cpp
+#include <HashEncoder/NeuralHashGrid.h>
+
+// 1. Configure both encoder and MLP
+HashEncoder::HashGridConfig encCfg;
+encCfg.NumLevels        = 8;
+encCfg.FeaturesPerLevel = 2;
+encCfg.BaseResolution   = 16;
+encCfg.Log2HashmapSize  = 14;
+
+HashEncoder::MiniMLP::Config mlpCfg;
+mlpCfg.InputDim        = encCfg.NumLevels * encCfg.FeaturesPerLevel; // = 16
+mlpCfg.HiddenDim       = 64;
+mlpCfg.OutputDim       = 3;   // e.g. RGB color
+mlpCfg.NumHiddenLayers = 2;
+
+// 2. Create the neural hash grid
+HashEncoder::NeuralHashGrid<3> model(encCfg, mlpCfg);
+model.Initialize(42);
+
+// 3. Training loop: input positions, target colors
+std::vector<float> positions = { /* N*3 floats in [0,1] */ };
+std::vector<float> targets   = { /* N*3 target RGB values */ };
+
+for (int step = 0; step < 1000; step++) {
+    float loss = model.TrainStep(positions.data(), targets.data(), positions.size() / 3, 0.01f);
+    printf("Step %d: loss = %.6f\n", step, loss);
+}
+
+// 4. Inference
+std::vector<float> output(targets.size());
+model.Forward(positions.data(), output.data(), positions.size() / 3);
 ```
 
 ## Input / Output
@@ -132,6 +196,32 @@ Hash table index: `hash & (tableSize - 1)` (requires power-of-two table size)
 | `Save(path)` | Save config + table to binary file |
 | `Load(path)` | Load config + table from binary file |
 
+### MiniMLP
+
+| Method | Description |
+|--------|-------------|
+| `MiniMLP(config)` | Construct with layer configuration |
+| `Forward(input, output, activations)` | Forward pass, saves activations for backward |
+| `Backward(lossGrad, activations, inputGrad)` | Backward pass, accumulates parameter gradients |
+| `ZeroGradients()` | Zero accumulated gradients |
+| `UpdateParameters(lr)` | SGD update step |
+
+### NeuralHashGrid<Dim>
+
+| Method | Description |
+|--------|-------------|
+| `NeuralHashGrid(encCfg, mlpCfg)` | Construct from encoder + MLP configs |
+| `Forward(positions, output, count)` | Encode → MLP forward |
+| `Backward(positions, lossGrad, tableGrads, posGrads, count)` | MLP backward → encoder backward |
+| `TrainStep(positions, targets, count, lr)` | Full training step: forward + MSE loss + backward + update |
+
+### Type Aliases
+
+```cpp
+using HashGridEncoding2D = HashGridEncoding<2>;  // Bilinear interpolation
+using HashGridEncoding3D = HashGridEncoding<3>;  // Trilinear interpolation
+```
+
 ### Backward Pass Usage
 
 ```cpp
@@ -147,19 +237,10 @@ encoder.EncodeGPUBackward(posBuffer, gradInBuffer, &posGradBuffer, count);
 std::vector<float> gpuTableGrads = encoder.GetTableGradients();
 ```
 
-### Type Aliases
-
-```cpp
-using HashGridEncoding2D = HashGridEncoding<2>;  // Bilinear interpolation
-using HashGridEncoding3D = HashGridEncoding<3>;  // Trilinear interpolation
-```
-
 ## Limitations
 
 1. **Float32 only**: No half-precision (float16) support yet.
-2. **OpenGL primarily tested**: Vulkan backend should work via EasyGPU but needs additional testing.
-3. **No MLP integration**: The encoding module is standalone; it does not include a fully-connected network decoder.
-4. **Power-of-two hash table**: The hash table size must be a power of two (enforced by `Log2HashmapSize`).
+2. **Power-of-two hash table**: The hash table size must be a power of two (enforced by `Log2HashmapSize`).
 
 ## File Format
 
@@ -181,14 +262,13 @@ Binary file format (little-endian, native):
 ## Planned Features
 
 - **Half precision (fp16)**: Reduced memory footprint for large hash tables
-- **MLP integration helpers**: Convenience wrappers for encoding + FC network pipelines
 - **Multi-GPU support**: Encoding distribution across multiple GPUs
 - **Performance optimizations**: Occupancy tuning, shared memory caching, L1 cache hints
 - **More encoding types**: Spherical harmonics encoding, frequency encoding, dense grid encoding
 
 ## License
 
-This project is licensed under the same terms as EasyGPU. See [LICENSE](EasyGPU/LICENSE) for details.
+MIT License. See [LICENSE](LICENSE) for details.
 
 ## References
 

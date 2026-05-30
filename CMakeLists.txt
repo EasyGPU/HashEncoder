@@ -102,6 +102,14 @@ if(HASHENCODER_BUILD_TESTS)
         target_compile_options(TestHashGridStress PRIVATE /Zc:preprocessor)
     endif()
     add_test(NAME TestHashGridStress COMMAND TestHashGridStress)
+
+    # MiniMLP sanity test
+    add_executable(TestMiniMLP tests/TestMiniMLP.cpp)
+    target_link_libraries(TestMiniMLP PRIVATE HashEncoder)
+    if(MSVC)
+        target_compile_options(TestMiniMLP PRIVATE /Zc:preprocessor)
+    endif()
+    add_test(NAME TestMiniMLP COMMAND TestMiniMLP)
 endif()
 
 # =============================================================================
@@ -112,6 +120,12 @@ if(HASHENCODER_BUILD_EXAMPLES)
     target_link_libraries(hash_grid_demo PRIVATE HashEncoder)
     if(MSVC)
         target_compile_options(hash_grid_demo PRIVATE /Zc:preprocessor)
+    endif()
+
+    add_executable(mlp_demo examples/mlp_demo/main.cpp)
+    target_link_libraries(mlp_demo PRIVATE HashEncoder)
+    if(MSVC)
+        target_compile_options(mlp_demo PRIVATE /Zc:preprocessor)
     endif()
 endif()
 
