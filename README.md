@@ -93,42 +93,6 @@ GPU::Runtime::Buffer<float> featBuffer(encoder.GetOutputDims());
 encoder.EncodeGPU(posBuffer, featBuffer, 1);
 ```
 
-### End-to-End Training with NeuralHashGrid
-
-```cpp
-#include <HashEncoder/NeuralHashGrid.h>
-
-// 1. Configure both encoder and MLP
-HashEncoder::HashGridConfig encCfg;
-encCfg.NumLevels        = 8;
-encCfg.FeaturesPerLevel = 2;
-encCfg.BaseResolution   = 16;
-encCfg.Log2HashmapSize  = 14;
-
-HashEncoder::MiniMLP::Config mlpCfg;
-mlpCfg.InputDim        = encCfg.NumLevels * encCfg.FeaturesPerLevel; // = 16
-mlpCfg.HiddenDim       = 64;
-mlpCfg.OutputDim       = 3;   // e.g. RGB color
-mlpCfg.NumHiddenLayers = 2;
-
-// 2. Create the neural hash grid
-HashEncoder::NeuralHashGrid<3> model(encCfg, mlpCfg);
-model.Initialize(42);
-
-// 3. Training loop: input positions, target colors
-std::vector<float> positions = { /* N*3 floats in [0,1] */ };
-std::vector<float> targets   = { /* N*3 target RGB values */ };
-
-for (int step = 0; step < 1000; step++) {
-    float loss = model.TrainStep(positions.data(), targets.data(), positions.size() / 3, 0.01f);
-    printf("Step %d: loss = %.6f\n", step, loss);
-}
-
-// 4. Inference
-std::vector<float> output(targets.size());
-model.Forward(positions.data(), output.data(), positions.size() / 3);
-```
-
 ## Input / Output
 
 **Input**: Positions in `[0, 1]^D`.
@@ -195,25 +159,6 @@ Hash table index: `hash & (tableSize - 1)` (requires power-of-two table size)
 | `SetHashTable(data)` | Set hash table from external data |
 | `Save(path)` | Save config + table to binary file |
 | `Load(path)` | Load config + table from binary file |
-
-### MiniMLP
-
-| Method | Description |
-|--------|-------------|
-| `MiniMLP(config)` | Construct with layer configuration |
-| `Forward(input, output, activations)` | Forward pass, saves activations for backward |
-| `Backward(lossGrad, activations, inputGrad)` | Backward pass, accumulates parameter gradients |
-| `ZeroGradients()` | Zero accumulated gradients |
-| `UpdateParameters(lr)` | SGD update step |
-
-### NeuralHashGrid<Dim>
-
-| Method | Description |
-|--------|-------------|
-| `NeuralHashGrid(encCfg, mlpCfg)` | Construct from encoder + MLP configs |
-| `Forward(positions, output, count)` | Encode → MLP forward |
-| `Backward(positions, lossGrad, tableGrads, posGrads, count)` | MLP backward → encoder backward |
-| `TrainStep(positions, targets, count, lr)` | Full training step: forward + MSE loss + backward + update |
 
 ### Type Aliases
 
