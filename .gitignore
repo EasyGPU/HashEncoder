@@ -1,0 +1,19 @@
+# Build output
+build/
+build_*/
+out/
+
+# IDE
+.vs/
+.idea/
+*.user
+.DS_Store
+Thumbs.db
+$RECYCLE.BIN/
+
+# CMake generated
+CMakeUserPresets.json
+compile_commands.json
+
+# Demo temp files
+hash_grid_demo_temp.bin
